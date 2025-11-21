@@ -195,6 +195,20 @@
         .katex-display { margin-left: auto; margin-right: auto; direction: ltr; }
         span.katex { direction: ltr; display: inline-block; }
 
+        /* inline و block code را LTR می‌کند */
+        code, pre code, kbd, samp {
+            direction: ltr;
+            unicode-bidi: isolate; /* از تداخل bidi با متن اطراف جلوگیری می‌کند */
+            text-align: left;      /* اگر خواستی متن داخل کد چپ‌چین شود */
+        }
+
+        /* برای block code اگر لازم شد */
+        pre code {
+            display: block;
+            white-space: pre-wrap; /* یا pre برای حفظ دقیق فضاها و newlineها */
+            word-break: break-word; /* جلوگیری از overflow در خطوط خیلی طولانی */
+        }
+
         /* Advanced Calculator Styles */
         .palette-tabs button { transition: all 0.2s ease-in-out; border-bottom: 3px solid transparent; }
         .palette-tabs button.active { color: #15803d; border-bottom-color: #15803d; }
@@ -202,10 +216,10 @@
         .palette-content.active { display: grid; }
         .math-symbol-btn { display: flex; align-items: center; justify-content: center; font-size: 1.1rem; min-height: 50px; }
         
-	.justify {
+	    .justify {
             text-align: justify;
             text-justify: inter-word;
-	}
+    	}
         #latex-preview {
             min-height: 50px;
             text-align: center;
@@ -213,8 +227,16 @@
             overflow-x: auto;      
             overflow-y: hidden;
             -webkit-overflow-scrolling: touch;
+            white-space: nowrap;
         }
         
+        #latex-preview .katex-display {
+            display: inline-block;
+            min-width: max-content;
+            white-space: nowrap;
+            direction: rtl;
+        }
+
         #latex-preview .katex-error {
             color: #ef4444; /* red */
         }
@@ -660,7 +682,7 @@
                  </div>
              </div>
 
-             <div id="plot-container" class="my-6 item-center hidden"></div>
+             <div id="plot-container" class="my-6 item-center bg-white mb-2 rounded-lg shadow hidden"></div>
              <div id="kami-output" dir="auto" class="justify bg-white p-4 rounded-lg shadow min-h-[150px] mt-6" prose prose-slate max-w-none text-justify">
                  <p class="text-gray-500 text-center">پاسخ KamiAI در اینجا نمایش داده می‌شود...</p>
              </div>
@@ -703,8 +725,8 @@
         	<div class="mt-6 border-t border-gray-200">
                     <h2 class="mt-3 text-2xl font-bold text-center">✨مبدل واحد هوشمند📏</h2>
                     <p class="mt-2 text-gray-600 text-center">درخواست تبدیل خود را که در برنامه نبوده است، به زبان ساده وارد کنید تا با کمک هوش مصنوعی KamiAI به درخواستتان پاسخ دهیم.</p>
-                    <div class="flex mt-2 items-center gap-2 bg-white border rounded-lg shadow-inner p-2">
-                         <input type="text" id="converter-input" class="w-full p-2 bg-transparent focus:outline-none overflow-x-auto" dir="rtl" placeholder="مثال: ۱۰ مایل به کیلومتر">
+                    <div class="flex mt-2 items-center gap-2 p-2">
+                         <textarea id="converter-input" class="flex-grow w-full p-4 min-h-[10x] bg-white focus:outline-none overflow-x-auto border rounded-lg shadow-inner resize-none text-slate-800" dir="rtl" placeholder="مثال: ۱۰ مایل به کیلومتر" data-gramm="false" contenteditable="true" role="textbox" aria-multiline="true" max-row="7" rows="1" style="overflow: hidden;"></textarea>
                          <button onclick="convertWithAI()" title="تبدیل" class="p-2 btn-3d btn-green rounded-full shrink-0"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"  viewBox="0 0 2200 2200"><g transform="scale(2.25) translate(-1050, -150)"><path style="fill:#FFFFFF;" d="M1346.535,606.039c2.16,4.919,2.16,10.561,0,15.479l-117.291,267.063		c-9.539,21.723-4.693,46.429,12.349,62.936c10.795,10.455,24.719,15.916,38.917,15.916c8.219,0,16.531-1.83,24.38-5.581		l622.408-297.39c19.711-9.418,31.955-28.838,31.955-50.683c0-21.845-12.244-41.266-31.955-50.684l-622.407-297.39		c-21.409-10.229-46.254-6.173-63.298,10.335c-17.043,16.508-21.89,41.211-12.349,62.936L1346.535,606.039z M1267.282,302.563		c1.64-1.587,6.434-5.566,13.233-5.566c2.556,0,5.395,0.563,8.456,2.025l622.408,297.39c6.855,3.276,10.949,9.768,10.949,17.367		H1385.07c0-7.705-1.576-15.41-4.729-22.588l-117.291-267.063C1258.058,312.758,1265.027,304.747,1267.282,302.563z"/></g></svg></button>
                     </div>
             
@@ -1668,6 +1690,89 @@
         const advancedCalcInput = document.getElementById('advanced-calc-input');
         const latexPreview = document.getElementById('latex-preview');
 
+        function isPersianChar(ch) {
+            if (!ch) return false;
+            return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\u200c]/.test(ch);
+        }
+
+        function preprocessPersian(input) {
+            let out = '';
+            let i = 0;
+            const n = input.length;
+            // stack to track open \text{ ... } blocks and their inner-brace depth
+            const textStack = [];
+
+            while (i < n) {
+                // detect existing \text{ and copy it verbatim while tracking its depth
+                if (input.startsWith('\\text{', i)) {
+                    out += '\\text{';
+                    i += 6; // skip "\\text{"
+                    textStack.push(1); // we've opened one level for this \text{
+                    continue;
+                }
+
+                const ch = input[i];
+
+                // if we're inside an existing \text{...} block, copy until it's closed
+                if (textStack.length > 0) {
+                    if (ch === '{') {
+                        textStack[textStack.length - 1]++;
+                        out += ch;
+                        i++;
+                        continue;
+                    }
+                    if (ch === '}') {
+                        textStack[textStack.length - 1]--;
+                        out += ch;
+                        i++;
+                        if (textStack[textStack.length - 1] === 0) textStack.pop();
+                        continue;
+                    }
+                    // normal char inside \text{...}
+                    out += ch;
+                    i++;
+                    continue;
+                }
+
+                // not inside \text{...}
+                // if current char is Persian, collect a run and wrap it
+                if (isPersianChar(ch)) {
+                    let j = i;
+                    let hasPersian = false;
+                    // gather until we hit a backslash (macro), a brace, or an ASCII letter (likely latex commands/variables)
+                    while (j < n) {
+                        const c = input[j];
+                        if (c === '\\' || c === '{' || c === '}') break;
+                        if (/[A-Za-z]/.test(c)) break;
+                        if (isPersianChar(c)) hasPersian = true;
+                        j++;
+                    }
+                    // if we collected something, wrap it; otherwise emit single char
+                    if (j > i && hasPersian) {
+                        const run = input.slice(i, j);
+                        out += '\\text{' + run + '}';
+                        i = j;
+                        continue;
+                    }
+                }
+
+                // otherwise copy one character (preserve macros as-is)
+                if (ch === '\\') {
+                    // copy backslash and following letters (macro name)
+                    let k = i + 1;
+                    while (k < n && /[A-Za-z]/.test(input[k])) k++;
+                    out += input.slice(i, k);
+                    i = k;
+                    continue;
+                }
+
+                out += ch;
+                i++;
+            }
+
+            return out;
+        }
+
         // Live LaTeX Preview handler
         advancedCalcInput.addEventListener('input', () => {
             const text = advancedCalcInput.value;
@@ -1677,7 +1782,7 @@
             }
             try {
                 // Render the text directly. KaTeX will process it.
-                katex.render(text, latexPreview, {
+                katex.render(preprocessPersian(text), latexPreview, {
                     throwOnError: true,
                     displayMode: true
                 });
@@ -2478,7 +2583,11 @@ const rect = targetElement.getBoundingClientRect();
 
                 if (candidate && candidate.content?.parts?.[0]?.text) {
                     let rawText = candidate.content.parts[0].text;
-                    rawText = rawText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                    rawText = rawText
+                        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                        .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+                        .replace(/^### (.*$)/gm, '<h3 class="text-xl font-bold my-3 text-right">$1</h3>')
+                        .replace(/```(\S*)\n([\s\S]*?)```/g, '<code>$1\n$2</code>');
                     const lines = rawText.split('\n');
                     const firstLine = lines.shift() || "";
                     const remainingText = lines.join('\n').replace(/\n/g, '<br>');
@@ -2513,9 +2622,14 @@ const rect = targetElement.getBoundingClientRect();
 
         document.getElementById('converter-input').addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
-                event.preventDefault();
-                convertWithAI();
-            }
+            	if (!isTouchDevice()) {
+			if (!event.shiftKey) {
+                	event.preventDefault(); // Prevent default action (like form submission)
+                	convertWithAI();
+            		}
+            	}
+            } else {}
+            setTimeout(autoResizeTextarea, 0);
         });
 
         // --- Math Tools Logic ---
@@ -4010,6 +4124,7 @@ const plotColour = isDarkMode ? '#4ade80' : '#15803d'; // #4ade80 برای Dark 
                  .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                  .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" class="my-4 rounded-lg shadow-md mx-auto max-w-full h-auto">')
                  .replace(/```(\S*)\n([\s\S]*?)```/g, '<code>$1\n$2</code>')
+                 .replace(/`([^`\n]+)`/g, '<code>$1</code>')
                  .replace(/\n/g, '<br>');
             
             // 3. Clean up
